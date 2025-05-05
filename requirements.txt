@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+apscheduler
+pydantic-settings
+python-dotenv
+dotenv
+httpx
