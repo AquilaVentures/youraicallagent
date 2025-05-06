@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     # Job 1
     scheduler.add_job(
         run_fetch_job,
-        trigger=IntervalTrigger(seconds=60),
+        trigger=IntervalTrigger(seconds=10),
         id="fetch_job",
         name="Fetch Data",
         replace_existing=True,
@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
     # Job 2
     scheduler.add_job(
         run_call_job,
-        trigger=IntervalTrigger(seconds=120),
+        trigger=IntervalTrigger(seconds=30),
         id="call_job",
         name="Launch VAPI Calls & Check Status of Previous Calls",
         replace_existing=True,

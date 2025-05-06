@@ -70,7 +70,7 @@ async def run_call_job():
                     logger.info(f"Recorded new call in history for doc_id={doc_id}: {call_id} @ {timestamp}")
 
                     # Pause before next call
-                    logger.info("Sleeping for 30 minutes to respect rate limits...")
+                    logger.info("Sleeping for 30 sec to respect rate limits...")
                     await asyncio.sleep(30)
                 else:
                     logger.info(f"Failed to initiate call for doc {doc_id}: {response}")

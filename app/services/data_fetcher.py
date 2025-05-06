@@ -5,6 +5,8 @@ import asyncio
 import json
 from typing import Optional, Dict, Any, List, Union
 from app.core.config import settings
+from dotenv import load_dotenv
+load_dotenv(override=True)
 
 # Set up the logger
 # Consider configuring logging more centrally in main.py or a dedicated logging module later

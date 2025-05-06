@@ -8,7 +8,6 @@ import asyncio
 # Import settings from the core config
 from app.core.config import settings
 from dotenv import load_dotenv
-# THIS WILL OVERWRITE any existing os.environ values
 load_dotenv(override=True)
 
 # Set up the logger
