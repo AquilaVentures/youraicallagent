@@ -1,10 +1,12 @@
 # FastAPI Cron Job App
+
 A FastAPI application that uses APScheduler to perform recurring background tasks, including fetching data from an external source and initiating/monitoring phone calls via a VAPI service. Data is persisted in MongoDB.
 
 ## Prerequisites
-Python 3.10+
-MongoDB instance (local or Atlas)
-VAPI account credentials (API key, assistant ID, phone number ID)
+
+* Python 3.10+
+* MongoDB instance (local or Atlas)
+* VAPI account credentials (API key, assistant ID, phone number ID)
 
 ## Installation
 
@@ -16,6 +18,7 @@ cd <your-repo-directory>
 ```
 
 Create a virtual environment and install dependencies:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # macOS/Linux
@@ -24,7 +27,9 @@ pip install -r requirements.txt
 ```
 
 # Configuration
+
 Set the following environment variables in .env:
+
 ```bash
 APP_NAME="FastAPI Cron Job App"
 DEBUG=False
@@ -42,9 +47,11 @@ MONGO_COLLECTION_NAME=fetched_clients
 ## Running the Application
 
 Local Development
+
 ```bash
 uvicorn app.main:app --reload
 ```
+
 The API will be available at http://127.0.0.1:8000.
 
 ## Deployment
@@ -52,6 +59,7 @@ The API will be available at http://127.0.0.1:8000.
 The included Procfile and `runtime.txt` make this project ready for platforms like Heroku:
 
 Procfile:
+
 ```bash
 web: uvicorn app.main:app --host=0.0.0.0 --port=${PORT:-8000}
 ```
@@ -60,16 +68,17 @@ web: uvicorn app.main:app --host=0.0.0.0 --port=${PORT:-8000}
 
 The application defines two recurring jobs using APScheduler:
 
-Fetch Job (run_fetch_job)
+**Fetch Job** (run_fetch_job)
 Fetch data from DATA_SOURCE_URL and save new items to MongoDB.
 
-Call Job (run_call_job)
+**Call Job** (run_call_job)
 Initiate calls for clients without prior calls
 Check status of pending calls and update call history
 
 Both jobs start automatically at application startup and shut down gracefully on shutdown.
 
 ## Project structure
+
 ```bash
 ├── app
 │   ├── api               # API routers (optional)
@@ -83,3 +92,11 @@ Both jobs start automatically at application startup and shut down gracefully on
 ├── runtime.txt           # Python runtime for deployment
 └── README.md             # Project documentation (this file)
 ```
+
+## Future Roadmap
+
+The following enhancements and features are planned for future releases:
+
+* Dashboard-Based Scheduling: Implement an admin dashboard to dynamically configure job intervals without code changes.
+* Advanced Call Retry Logic: Allow configuration of retry counts and delays for unanswered calls (including custom handling for the initial call).
+* Sales Script Workflow: Design a clearer VAPI conversation flow tailored to the sales script, with decision branches and variable prompts.
