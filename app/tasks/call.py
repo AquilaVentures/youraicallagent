@@ -1,6 +1,6 @@
-# app/tasks/call.py
 import asyncio
 import datetime
+from zoneinfo import ZoneInfo
 from pymongo.collection import Collection
 from app.services.vapi_service import send_phone_call_request, check_call_status
 from app.services.mongo_service import MongoService
@@ -8,102 +8,142 @@ from app.core.config import settings
 import logging
 
 # Set up the logger
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+
+# Define offer texts for each source
+OFFERS = {
+    'WaitlistUsers': (
+        "order the base package now, and only pay 195, "
+        "and get a 4 year subscription!"
+    ),
+    'myAIAgentsUser': (
+        "buy value pack now, and we'll quadruple its value on release! "
+        "Which means, when you buy 100 euro now, we'll give you 400 euro when going live. "
+        "Doesn't that sound great? How much would you want to buy?"
+    ),
+}
+
+# Threshold for new calls
+THRESHOLD = (
+    datetime.timedelta(seconds=10)
+    if settings.DEBUG
+    else datetime.timedelta(days=5)
+)
 
 async def run_call_job():
-    """
-    Fetch all clients, initiate calls for new clients,
-    record call history, and check status for pending calls.
-    """
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    logger.info(f"[{now}] Running Job: Fetch clients and process calls...")
+    # Always compare against UTC “now”
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    logger.info(f"[{now_utc.isoformat()}] Running Job: Fetch clients and process calls...")
 
-    # Initialize the Mongo service
+    # Mongo setup
     db_url = settings.MONGO_DB_URL
-    db_name = getattr(settings, 'MONGO_DATABASE_NAME', 'earlybirds')
-    coll_name = getattr(settings, 'MONGO_COLLECTION_NAME', 'fetched_clients')
-    mongo_service = MongoService(db_url, db_name, coll_name)
+    db_name = settings.MONGO_DATABASE_NAME
+    waitlist_service = MongoService(db_url, db_name, 'WaitlistUsers')
+    agents_service   = MongoService(db_url, db_name, 'myAIAgentsUser')
 
     try:
-        # Get the raw PyMongo collection
-        collection: Collection = mongo_service._get_collection()
+        for coll_name, collection in [
+            ('WaitlistUsers',   waitlist_service._get_collection()),
+            ('myAIAgentsUser',  agents_service._get_collection()),
+        ]:
+            logger.debug(f"Processing collection: {coll_name}")
+            for client in collection.find({}):
+                doc_id    = client.get('_id')
+                name      = client.get('fullName')
+                phone     = client.get('phoneNumber')
+                language  = client.get('language')
+                created   = client.get('createdAt')
 
-        # 1. Fetch all client documents
-        clients = list(collection.find({}))
-
-        for client in clients:
-            doc_id = client.get('_id')
-            n_calls = client.get('n_calls', 0)
-            call_history = client.get('call_history', [])
-
-            # 2. If no calls have been made yet, initiate a new call
-            if n_calls == 0:
-                phone = client.get('phoneNumber')
-                name = client.get('fullName')
-                if not phone or not name:
-                    logger.info(f"Skipping doc {doc_id}: missing phone or name")
+                # Must have the basics
+                if not (name and phone and language and created):
+                    logger.info(f"Skipping {coll_name} {doc_id}: missing fields")
                     continue
 
-                logger.info(f"Initiating call for doc_id={doc_id} ({name} @ {phone})")
-
-                # In DEBUG mode always call the test number
-                if settings.DEBUG:
-                    phone = "+40785487261"
-
-                # Send the call request
-                response = await send_phone_call_request({'phone': phone, 'name': name})
-
-                if response and 'id' in response:
-                    call_id = response['id']
-                    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    # Push a new entry into call_history and increment n_calls
-                    update_query = {
-                        '$push': {
-                            'call_history': {'call_id': call_id, 'timestamp': timestamp}
-                        },
-                        '$inc': {'n_calls': 1}
-                    }
-                    collection.update_one({'_id': doc_id}, update_query)
-                    logger.info(f"Recorded new call in history for doc_id={doc_id}: {call_id} @ {timestamp}")
-
-                    # Pause before next call
-                    logger.info("Sleeping for 30 sec to respect rate limits...")
-                    await asyncio.sleep(30)
+                # 1) Parse createdAt
+                if isinstance(created, str):
+                    try:
+                        created_dt = datetime.datetime.fromisoformat(created)
+                    except Exception:
+                        logger.warning(f"Bad date for {doc_id}: {created}")
+                        continue
+                elif isinstance(created, datetime.datetime):
+                    created_dt = created
                 else:
-                    logger.info(f"Failed to initiate call for doc {doc_id}: {response}")
+                    logger.warning(f"Unexpected createdAt type for {doc_id}: {type(created)}")
+                    continue
 
-            # 3. If we’ve already made calls, check pending statuses
-            else:
-                # Iterate over history entries that lack a response
-                pending_entries = [e for e in call_history if 'response' not in e]
-                for entry in pending_entries:
-                    entry_call_id = entry.get('call_id')
-                    logger.info(f"Checking status for doc_id={doc_id}, call_id={entry_call_id}")
-                    status_resp = await check_call_status(entry_call_id)
+                # 2) If naive, assume Europe/Bucharest
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=ZoneInfo('Europe/Bucharest'))
 
-                    # Only update if call has ended
-                    if status_resp and status_resp.get('status') == 'ended':
-                        # Use arrayFilters to update only this history element
+                # 3) Convert to UTC
+                created_utc = created_dt.astimezone(datetime.timezone.utc)
+
+                # 4) Compute age
+                age = now_utc - created_utc
+                logger.debug(f"Doc {doc_id} age = {age} (threshold = {THRESHOLD})")
+
+                # 5) Skip if too old
+                print(age, THRESHOLD, age-THRESHOLD)
+                if age < THRESHOLD:
+                    logger.info(f"Skipping {coll_name} {doc_id}: created {age} ago")
+                    continue
+
+                n_calls      = client.get('n_calls', 0)
+                call_history = client.get('call_history', [])
+                offer        = OFFERS[coll_name]
+
+                # First-time call
+                if n_calls == 0:
+                    logger.info(f"Initiating call for {coll_name} {doc_id} ({name})")
+                    if settings.DEBUG:
+                        phone = "+40785487261"
+
+                    payload = {'phone': phone, 'name': name, 'language': language, 'offer': offer}
+                    resp = await send_phone_call_request(payload)
+
+                    if resp and 'id' in resp:
+                        call_id   = resp['id']
+                        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         collection.update_one(
                             {'_id': doc_id},
                             {
-                                '$set': { 'call_history.$[elem].response': status_resp }
-                            },
-                            array_filters=[{'elem.call_id': entry_call_id, 'elem.response': {'$exists': False}}]
+                                '$push': {'call_history': {'call_id': call_id, 'timestamp': timestamp}},
+                                '$inc': {'n_calls': 1}
+                            }
                         )
-                        logger.info(f"Saved response for doc_id={doc_id}, call_id={entry_call_id}")
+                        logger.info(f"Recorded call {call_id} @ {timestamp}")
+                        await asyncio.sleep(30)
                     else:
-                        logger.info(f"Call not ended or error for doc_id={doc_id}, call_id={entry_call_id}: status={status_resp}")
+                        logger.info(f"Failed to initiate call for {doc_id}: {resp}")
+
+                # Check pending
+                else:
+                    print("Checking pending calls...")
+                    pending = [e for e in call_history if 'response' not in e]
+                    for entry in pending:
+                        cid = entry['call_id']
+                        logger.info(f"Checking status for call {cid}")
+                        status = await check_call_status(cid)
+                        if status and status.get('status') == 'ended':
+                            collection.update_one(
+                                {'_id': doc_id},
+                                {'$set': {'call_history.$[e].response': status}},
+                                array_filters=[{'e.call_id': cid, 'e.response': {'$exists': False}}]
+                            )
+                            logger.info(f"Saved response for call {cid}")
+                        else:
+                            logger.info(f"Call {cid} not ended or error: {status}")
 
         logger.info("Call job completed.")
 
     finally:
-        # Ensure the Mongo connection is always closed
-        mongo_service.close_connection()
-
+        waitlist_service.close_connection()
+        agents_service.close_connection()
 
 if __name__ == "__main__":
     asyncio.run(run_call_job())

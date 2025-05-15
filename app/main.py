@@ -26,21 +26,21 @@ async def lifespan(app: FastAPI):
     Starts the scheduler on startup and shuts it down gracefully on shutdown.
     """
     print("Starting application and scheduler...")
-    # Job 1
-    scheduler.add_job(
-        run_fetch_job,
-        trigger=IntervalTrigger(seconds=10),
-        id="fetch_job",
-        name="Fetch Data",
-        replace_existing=True,
-        max_instances=1, # Ensure only one instance runs at a time
-        coalesce=True    # Skip job run if previous one is still running
-    )
+    # # Job 1
+    # scheduler.add_job(
+    #     run_fetch_job,
+    #     trigger=IntervalTrigger(seconds=10),
+    #     id="fetch_job",
+    #     name="Fetch Data",
+    #     replace_existing=True,
+    #     max_instances=1, # Ensure only one instance runs at a time
+    #     coalesce=True    # Skip job run if previous one is still running
+    # )
 
     # Job 2
     scheduler.add_job(
         run_call_job,
-        trigger=IntervalTrigger(seconds=30),
+        trigger=IntervalTrigger(seconds=5),
         id="call_job",
         name="Launch VAPI Calls & Check Status of Previous Calls",
         replace_existing=True,

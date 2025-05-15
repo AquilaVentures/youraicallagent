@@ -17,5 +17,6 @@ class Settings(BaseSettings):
     VAPI_PHONE_NUMBER_ID: str
     MONGO_DB_URL: str
     DATA_SOURCE_URL: str
+    MONGO_DATABASE_NAME: str
 
 settings = Settings()
