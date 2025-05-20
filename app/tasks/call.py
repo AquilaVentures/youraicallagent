@@ -17,13 +17,11 @@ logger = logging.getLogger(__name__)
 # Define offer texts for each source
 OFFERS = {
     'WaitlistUsers': (
-        "order the base package now, and only pay 195, "
-        "and get a 4 year subscription!"
+        "Order the base package now, and only pay 195 to get a 4 year subscription! "
     ),
     'myAIAgentsUser': (
-        "buy value pack now, and we'll quadruple its value on release! "
+        "Buy value pack now, and we'll quadruple its value on release! "
         "Which means, when you buy 100 euro now, we'll give you 400 euro when going live. "
-        "Doesn't that sound great? How much would you want to buy?"
     ),
 }
 

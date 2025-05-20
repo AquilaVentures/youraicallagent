@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
     # Job 2
     scheduler.add_job(
         run_call_job,
-        trigger=IntervalTrigger(seconds=5),
+        trigger=IntervalTrigger(seconds=25),
         id="call_job",
         name="Launch VAPI Calls & Check Status of Previous Calls",
         replace_existing=True,
