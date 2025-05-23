@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Define offer texts for each source
+# Define offer texts for upsell calls
 OFFERS = {
     'WaitlistUsers': (
         "Order the base package now, and only pay 195 to get a 4 year subscription! "
@@ -25,19 +25,19 @@ OFFERS = {
     ),
 }
 
-# Threshold for new calls
-THRESHOLD = (
-    datetime.timedelta(seconds=10)
-    if settings.DEBUG
-    else datetime.timedelta(days=5)
+# Thank-you message
+THANK_YOU_MESSAGE = "Thank you for signing up! We're excited to have you on board. Let us know if you need any help!"
+
+# Thresholds
+UPSELL_THRESHOLD = (
+    datetime.timedelta(seconds=10) if settings.DEBUG else datetime.timedelta(days=5)
 )
+THANK_YOU_CALL_THRESHOLD = datetime.timedelta(minutes=15)
 
 async def run_call_job():
-    # Always compare against UTC “now”
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     logger.info(f"[{now_utc.isoformat()}] Running Job: Fetch clients and process calls...")
 
-    # Mongo setup
     db_url = settings.MONGO_DB_URL
     db_name = settings.MONGO_DATABASE_NAME
     waitlist_service = MongoService(db_url, db_name, 'WaitlistUsers')
@@ -45,23 +45,22 @@ async def run_call_job():
 
     try:
         for coll_name, collection in [
-            ('WaitlistUsers',   waitlist_service._get_collection()),
-            ('myAIAgentsUser',  agents_service._get_collection()),
+            ('WaitlistUsers', waitlist_service._get_collection()),
+            ('myAIAgentsUser', agents_service._get_collection()),
         ]:
             logger.debug(f"Processing collection: {coll_name}")
             for client in collection.find({}):
-                doc_id    = client.get('_id')
-                name      = client.get('fullName')
-                phone     = client.get('phoneNumber')
-                language  = client.get('language')
-                created   = client.get('createdAt')
+                doc_id = client.get('_id')
+                name = client.get('fullName')
+                phone = client.get('phoneNumber')
+                language = client.get('language')
+                created = client.get('createdAt')
 
-                # Must have the basics
                 if not (name and phone and language and created):
                     logger.info(f"Skipping {coll_name} {doc_id}: missing fields")
                     continue
 
-                # 1) Parse createdAt
+                # Parse createdAt
                 if isinstance(created, str):
                     try:
                         created_dt = datetime.datetime.fromisoformat(created)
@@ -74,30 +73,21 @@ async def run_call_job():
                     logger.warning(f"Unexpected createdAt type for {doc_id}: {type(created)}")
                     continue
 
-                # 2) If naive, assume Europe/Bucharest
+                # Assume Europe/Bucharest if naive
                 if created_dt.tzinfo is None:
                     created_dt = created_dt.replace(tzinfo=ZoneInfo('Europe/Bucharest'))
 
-                # 3) Convert to UTC
                 created_utc = created_dt.astimezone(datetime.timezone.utc)
-
-                # 4) Compute age
                 age = now_utc - created_utc
-                logger.debug(f"Doc {doc_id} age = {age} (threshold = {THRESHOLD})")
+                logger.debug(f"Doc {doc_id} age = {age}")
 
-                # 5) Skip if too old
-                print(age, THRESHOLD, age-THRESHOLD)
-                if age < THRESHOLD:
-                    logger.info(f"Skipping {coll_name} {doc_id}: created {age} ago")
-                    continue
-
-                n_calls      = client.get('n_calls', 0)
+                n_calls = client.get('n_calls', 0)
                 call_history = client.get('call_history', [])
-                offer        = OFFERS[coll_name]
+                offer = OFFERS.get(coll_name, "")
 
-                # First-time call
-                if n_calls == 0:
-                    logger.info(f"Initiating call for {coll_name} {doc_id} ({name})")
+                # === UPSALE CALL ===
+                if n_calls == 0 and age >= UPSELL_THRESHOLD:
+                    logger.info(f"Initiating UPSALE call for {coll_name} {doc_id} ({name})")
                     if settings.DEBUG:
                         phone = "+40785487261"
 
@@ -105,23 +95,57 @@ async def run_call_job():
                     resp = await send_phone_call_request(payload)
 
                     if resp and 'id' in resp:
-                        call_id   = resp['id']
+                        call_id = resp['id']
                         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         collection.update_one(
                             {'_id': doc_id},
                             {
-                                '$push': {'call_history': {'call_id': call_id, 'timestamp': timestamp}},
+                                '$push': {'call_history': {
+                                    'call_id': call_id,
+                                    'timestamp': timestamp,
+                                    'type': 'upsell'
+                                }},
                                 '$inc': {'n_calls': 1}
                             }
                         )
-                        logger.info(f"Recorded call {call_id} @ {timestamp}")
+                        logger.info(f"Recorded UPSALE call {call_id} @ {timestamp}")
                         await asyncio.sleep(30)
                     else:
-                        logger.info(f"Failed to initiate call for {doc_id}: {resp}")
+                        logger.info(f"Failed to initiate UPSALE call for {doc_id}: {resp}")
 
-                # Check pending
+                # === THANK-YOU CALL ===
+                elif n_calls == 1 and age >= THANK_YOU_CALL_THRESHOLD:
+                    has_thankyou_call = any(c.get('type') == 'thankyou' for c in call_history)
+                    if not has_thankyou_call:
+                        logger.info(f"Initiating THANK-YOU call for {coll_name} {doc_id} ({name})")
+                        if settings.DEBUG:
+                            phone = "+40785487261"
+
+                        payload = {'phone': phone, 'name': name, 'language': language, 'offer': THANK_YOU_MESSAGE}
+                        resp = await send_phone_call_request(payload)
+
+                        if resp and 'id' in resp:
+                            call_id = resp['id']
+                            timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                            collection.update_one(
+                                {'_id': doc_id},
+                                {
+                                    '$push': {'call_history': {
+                                        'call_id': call_id,
+                                        'timestamp': timestamp,
+                                        'type': 'thankyou'
+                                    }},
+                                    '$inc': {'n_calls': 1}
+                                }
+                            )
+                            logger.info(f"Recorded THANK-YOU call {call_id} @ {timestamp}")
+                            await asyncio.sleep(30)
+                        else:
+                            logger.info(f"Failed to initiate THANK-YOU call for {doc_id}: {resp}")
+
+                # === PENDING CALLS CHECK ===
                 else:
-                    print("Checking pending calls...")
+                    logger.debug("Checking pending calls...")
                     pending = [e for e in call_history if 'response' not in e]
                     for entry in pending:
                         cid = entry['call_id']
