@@ -89,7 +89,7 @@ async def run_call_job():
                 if n_calls == 0 and age >= UPSELL_THRESHOLD:
                     logger.info(f"Initiating UPSALE call for {coll_name} {doc_id} ({name})")
                     if settings.DEBUG:
-                        phone = "+40785487261"
+                        phone = "+32475396536"
 
                     payload = {'phone': phone, 'name': name, 'language': language, 'offer': offer}
                     resp = await send_phone_call_request(payload)
@@ -119,7 +119,7 @@ async def run_call_job():
                     if not has_thankyou_call:
                         logger.info(f"Initiating THANK-YOU call for {coll_name} {doc_id} ({name})")
                         if settings.DEBUG:
-                            phone = "+40785487261"
+                            phone = "+32475396536"
 
                         payload = {'phone': phone, 'name': name, 'language': language, 'offer': THANK_YOU_MESSAGE}
                         resp = await send_phone_call_request(payload)
