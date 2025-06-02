@@ -6,6 +6,7 @@ from app.services.vapi_service import send_phone_call_request, check_call_status
 from app.services.mongo_service import MongoService
 from app.core.config import settings
 import logging
+from app.openai_utils import get_structured_data
 
 # Set up the logger
 logging.basicConfig(
@@ -151,6 +152,17 @@ async def run_call_job():
                         cid = entry['call_id']
                         logger.info(f"Checking status for call {cid}")
                         status = await check_call_status(cid)
+                   
+                        # run over transcript get_structured_data
+                        if 'transcript' in status:
+                            try:
+                                structured_data = get_structured_data(status['transcript'])
+                                status['structured_data'] = structured_data
+                            except Exception as e:
+                                logger.error(f"Error processing transcript for call {cid}: {e}")
+                                status['structured_data'] = None
+
+
                         if status and status.get('status') == 'ended':
                             collection.update_one(
                                 {'_id': doc_id},
